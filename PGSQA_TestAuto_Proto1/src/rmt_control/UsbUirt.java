@@ -1,0 +1,387 @@
+package rmt_control;
+
+import static rmt_control.Win.Kernel32.CloseHandle;
+import static rmt_control.Win.Kernel32.CreateEvent;
+import static rmt_control.Win.Kernel32.WaitForSingleObject;
+
+import java.util.Arrays;
+import java.util.List;
+
+import com.sun.jna.Memory;
+import com.sun.jna.Native;
+import com.sun.jna.NativeLibrary;
+import com.sun.jna.NativeLong;
+import com.sun.jna.Pointer;
+import com.sun.jna.Structure;
+import com.sun.jna.WString;
+import com.sun.jna.ptr.IntByReference;
+import com.sun.jna.win32.W32APIOptions;
+import com.sun.jna.win32.StdCallLibrary.StdCallCallback;
+
+import rmt_control.SharedLibraryLoader;
+import rmt_control.UsbUirt;
+
+public class UsbUirt {
+	static private final int ERROR_CONNECTION = 0x20000001;
+	static private final int ERROR_COMMUNICATION = 0x20000002;
+	static private final int ERROR_DRIVER_NOT_FOUND = 0x20000003;
+	static private final int ERROR_INCOMPATIBLE_FIRMWARE = 0x20000004;
+	static private final int ERROR_UNKNOWN = -1;
+
+	static private final int CONFIG_LEDRX = 0x0001;
+	static private final int CONFIG_LEDTX = 0x0002;
+	static private final int CONFIG_LEGACYRX = 0x0004;
+
+	static private int[] flags = new int[1];
+
+	static private String codeFinal = "";
+	static {
+		new SharedLibraryLoader().load("uuirtdrv");
+		Native.register(NativeLibrary.getInstance("uuirtdrv", W32APIOptions.DEFAULT_OPTIONS));
+	}
+
+	private Pointer handle;
+	private boolean isLearning;
+	private final Memory memory = new Memory(32768);
+	private final IntByReference abortLearning = new IntByReference();
+
+	private final PUUCALLBACKPROC receive = new PUUCALLBACKPROC() {
+		public void invoke (Pointer IREventStr, Pointer userData) {
+			receive(IREventStr.getString(0));
+		}
+	};
+
+	private final PLEARNCALLBACKPROC learn = new PLEARNCALLBACKPROC() {
+		public void invoke (int progress, int sigQuality, NativeLong carrierFreq, Pointer userData) {
+			learn(progress, sigQuality, carrierFreq.longValue());
+		}
+	};
+
+	public int getDriverVersion () {
+		int[] version = new int[1];
+		if (!UUIRTGetDrvInfo(version)) return -1;
+		return version[0];
+	}
+
+	public void connect () throws Exception {
+		long result = UUIRTOpen();
+		if (result == -1) {
+			int error = Native.getLastError();
+			switch (error) {
+			case ERROR_DRIVER_NOT_FOUND:
+				throw new Exception("Driver not found.");
+			case ERROR_CONNECTION:
+				throw new Exception("Unable to connect to device.");
+			case ERROR_COMMUNICATION:
+				throw new Exception("Unable to communicate with device.");
+			case ERROR_INCOMPATIBLE_FIRMWARE:
+				throw new Exception("Incompatible firmware.");
+			}
+			throw new Exception("Unknown error: " + error);
+		}
+
+		Pointer pointer = new Pointer(result);
+		if (!UUIRTSetReceiveCallback(pointer, receive, null)) throw new Exception("Unable to set receive callback.");
+		handle = pointer;
+	}
+
+	public boolean disconnect () {
+		if (handle == null) return true;
+		try {
+			return UUIRTClose(handle);
+		} finally {
+			handle = null;
+		}
+	}
+
+	public boolean isConnected () {
+		return handle != null && UUIRTGetUUIRTConfig(handle, flags);
+	}
+
+	/** @return May be null. */
+	public Info getInfo () {
+		if (handle == null) return null;
+		PUUINFO puuinfo = new PUUINFO();
+		if (!UUIRTGetUUIRTInfo(handle, puuinfo)) return null;
+		Info info = new Info();
+		info.firmwareVersion = (puuinfo.fwVersion >> 8) + "." + (puuinfo.fwVersion & 0xFF);
+		info.protocolVersion = (puuinfo.protVersion >> 8) + "." + (puuinfo.protVersion & 0xFF);
+		info.firmwareDate = puuinfo.fwDateMonth + "/" + puuinfo.fwDateDay + "/" + (puuinfo.fwDateYear + 2000);
+		return info;
+	}
+
+	/** @return May be null. */
+	public Config getConfig () {
+		if (handle == null) return null;
+		int[] flags = new int[1];
+		if (!UUIRTGetUUIRTConfig(handle, flags)) return null;
+		return new Config(flags[0]);
+	}
+
+	public boolean setConfig (Config config) {
+		if (handle == null) return false;
+		return UUIRTSetUUIRTConfig(handle, config.flags);
+	}
+
+	/** Transmits the specified IR code with the format=Format.pronto, repeat=1, inactivityWaitTime=0. */
+	public boolean transmit (String code, boolean blockExecution) {
+		return transmit(code, Format.pronto, 1, 0, blockExecution);
+//		return transmit(code, Format.learnForceRaw, 1, 0, blockExecution);
+//		return transmit(code, Format.uuirt, 1, 0, blockExecution);
+	
+	}
+
+	/** Transmits the specified IR code.
+	 * @param repeat Number of times to repeat the code. For a two-piece code the first piece is sent once followed by the second
+	 *           piece repeat times.
+	 * @param inactivityWaitTime Milliseconds since the last received IR activity to wait before sending the IR code. Normally pass
+	 *           0.
+	 * @param blockExecution If true, execution will be blocked until the IR code is sent. */
+	public boolean transmit (String code, Format format, int repeat, int inactivityWaitTime, boolean blockExecution) {
+		if (handle == null) return false;
+		Pointer doneEvent = null;
+		if (blockExecution) doneEvent = CreateEvent(null, false, false, new WString("hUSBUIRTXAckEvent"));
+		try {
+			memory.setString(0, code);
+			if (!UUIRTTransmitIR(handle, memory, format.value, repeat, inactivityWaitTime, doneEvent, null, null)) return false;
+			if (!blockExecution) return true;
+			return WaitForSingleObject(doneEvent, 10 * 1000) == 0; // WAIT_OBJECT_0
+		} finally {
+			if (doneEvent != null) CloseHandle(doneEvent);
+		}
+	}
+
+	/** Learns and returns a code in the Pront format or null if learning was aborted or failed. The Pronto format is the most
+	 * reliable, though it generates the longest codes. Blocks execution.
+	 * @return May be null. Empty string is returned if learning was cancelled. */
+	public synchronized String learn () {
+		return learn(Format.pronto, 0);
+//		return learn(Format.learnForceRaw, 0);
+//		return learn(Format.uuirt, 0);
+		
+	}
+
+	/** Learns and returns a code in the specified format or null if learning was aborted or failed. Blocks execution.
+	 * @return May be null. */
+	public synchronized String learn (Format format) {
+		return learn(format, 0);
+	}
+
+	/** Learns and returns a code in the specified format but only for the specified frequency or null if learning was aborted or
+	 * failed. Blocks execution.
+	 * @return May be null. */
+	public String learn (Format format, int forcedFrequency) {
+		if (handle == null) return null;
+		if (isLearning) return null;
+		isLearning = true;
+		try {
+			abortLearning.setValue(0);
+			if (!UUIRTLearnIR(handle, format.value, memory, learn, null, abortLearning, forcedFrequency, null, null)) return null;
+			return memory.getString(0);
+		} finally {
+			isLearning = false;
+		}
+	}
+
+	public void abortLearn () {
+		abortLearning.setValue(1);
+	}
+
+	protected void receive (String code) {
+	}
+
+	protected void learn (int progress, int signalQuality, long carrierFrequency) {
+	}
+
+	static private native boolean UUIRTGetDrvInfo (int[] puDrvVersion);
+
+	static private native long UUIRTOpen ();
+
+	static private native boolean UUIRTClose (Pointer hHandle);
+
+	static private native boolean UUIRTGetUUIRTInfo (Pointer hHandle, PUUINFO puuInfo);
+
+	static private native boolean UUIRTGetUUIRTConfig (Pointer hHandle, int[] puConfig);
+
+	static private native boolean UUIRTSetUUIRTConfig (Pointer hHandle, int uConfig);
+
+	static private native boolean UUIRTSetReceiveCallback (Pointer hHandle, PUUCALLBACKPROC receiveProc, Pointer userData);
+
+	static private native boolean UUIRTTransmitIR (Pointer hHandle, Pointer IRCode, int codeFormat, int repeatCount,
+		int inactivityWaitTime, Pointer hEvent, Pointer reserved0, Pointer reserved1);
+
+	static private native boolean UUIRTLearnIR (Pointer hHandle, int codeFormat, Pointer IRCode, PLEARNCALLBACKPROC progressProc,
+		Pointer userData, IntByReference pAbort, int param1, Pointer reserved0, Pointer reserved1);
+
+	static private interface PUUCALLBACKPROC extends StdCallCallback {
+		void invoke (Pointer IREventStr, Pointer userData);
+	}
+
+	static private interface PLEARNCALLBACKPROC extends StdCallCallback {
+		void invoke (int progress, int sigQuality, NativeLong carrierFreq, Pointer userData);
+	}
+
+	static public class PUUINFO extends Structure {
+		public int fwVersion;
+		public int protVersion;
+		public byte fwDateDay;
+		public byte fwDateMonth;
+		public byte fwDateYear;
+
+		protected List getFieldOrder () {
+			return Arrays.asList(new String[] {"fwVersion", "protVersion", "fwDateDay", "fwDateMonth", "fwDateYear"});
+		}
+	}
+
+	static public class Info {
+		public String firmwareVersion, protocolVersion, firmwareDate;
+	}
+
+	static public class Config {
+		int flags;
+
+		Config (int flags) {
+			this.flags = flags;
+		}
+
+		public boolean getReceiveLED () {
+			return (flags & CONFIG_LEDRX) != 0;
+		}
+
+		public void setReceiveLED (boolean receiveLED) {
+			if (receiveLED)
+				flags |= CONFIG_LEDRX;
+			else
+				flags &= ~CONFIG_LEDRX;
+		}
+
+		public boolean getTransmitLED () {
+			return (flags & CONFIG_LEDTX) != 0;
+		}
+
+		public void setTransmitLED (boolean receiveLED) {
+			if (receiveLED)
+				flags |= CONFIG_LEDTX;
+			else
+				flags &= ~CONFIG_LEDTX;
+		}
+
+		public boolean getLegacyReceive () {
+			return (flags & CONFIG_LEGACYRX) != 0;
+		}
+
+		public void setLegacyReceive (boolean receiveLED) {
+			if (receiveLED)
+				flags |= CONFIG_LEGACYRX;
+			else
+				flags &= ~CONFIG_LEGACYRX;
+		}
+	}
+
+	static public enum Format {
+		uuirt(0x0000), pronto(0x0010), learnForceRaw(0x0100), learnForceStruc(0x0200), learnForceFreq(0x0400), learnForceDetect(
+			0x0800);
+
+		int value;
+
+		Format (int value) {
+			this.value = value;
+		}
+	}
+
+	static public void UIRT_Transmit (String RMT_command) throws Exception {
+		final UsbUirt uirt = new UsbUirt();
+//
+//		System.out.println("Driver version: " + uirt.getDriverVersion() + "\n");
+
+		uirt.connect();
+//		System.out.println("Connected: " + uirt.isConnected() + "\n");
+
+//		Info info = uirt.getInfo();
+//		System.out.println("Firmware version: " + info.firmwareVersion);
+//		System.out.println("Firmware date: " + info.firmwareDate);
+//		System.out.println("Protocol version: " + info.protocolVersion + "\n");
+//
+//		Config config = uirt.getConfig();
+//		System.out.println("Receive LED: " + config.getReceiveLED());
+//		System.out.println("Transmit LED: " + config.getTransmitLED());
+//		System.out.println("Legacy receive: " + config.getLegacyReceive() + "\n");
+
+//		uirt.setConfig(config);
+
+//		System.out.println("Transmit blocking...");
+//		if (!uirt.transmit(
+//			"0000 006F 0000 0032 0081 0042 0010 0011 0010 0031 0010 0011 0010 0011 0010 0011 0010 0011 0010 0011 0010 0011 0010 "
+//				+ "0011 0010 0011 0010 0011 0010 0011 0010 0011 0010 0031 0010 0011 0010 0011 0010 0011 0010 0011 0010 0011 0010 "
+//				+ "0011 0010 0011 0010 0011 0010 0011 0010 0031 0010 0011 0010 0011 0010 0011 0010 0011 0010 0011 0010 0011 0010 "
+//				+ "0011 0010 0011 0010 0011 0010 0011 0010 0011 0010 0011 0010 0031 0010 0011 0010 0011 0010 0011 0010 0011 0010 "
+//				+ "0011 0010 0011 0010 0011 0010 0031 0010 0011 0010 0011 0010 0031 0010 0ADC",
+//			true)) throw new Exception("Transmit failed!");
+//		System.out.println("Done.\n");
+
+		String code = RMT_command;
+//		uirt.transmit(code, Format.pronto, 5 ,0 ,true);
+			
+//		System.out.println("\nTransmit blocking...");
+
+		if (!uirt.transmit(code, Format.pronto, 5 ,0 ,true)) throw new Exception("Transmit failed!");
+//		System.out.println("Signal sent: " +code);
+
+//		System.out.println("Aborting.");
+		uirt.abortLearn();
+
+//		System.out.println("\nDisconnecting...");
+		uirt.disconnect();
+//		System.out.println("Connected: " + uirt.isConnected());
+	}
+	
+	public static String UIRT_Learn () throws Exception {
+		final UsbUirt uirt = new UsbUirt();
+//
+//		System.out.println("Driver version: " + uirt.getDriverVersion() + "\n");
+
+		uirt.connect();
+		System.out.println("Connected: " + uirt.isConnected() + "\n");
+
+		Info info = uirt.getInfo();
+		System.out.println("Firmware version: " + info.firmwareVersion);
+		System.out.println("Firmware date: " + info.firmwareDate);
+		System.out.println("Protocol version: " + info.protocolVersion + "\n");
+
+		Config config = uirt.getConfig();
+		System.out.println("Receive LED: " + config.getReceiveLED());
+		System.out.println("Transmit LED: " + config.getTransmitLED());
+		System.out.println("Legacy receive: " + config.getLegacyReceive() + "\n");
+
+		uirt.setConfig(config);
+
+//		System.out.println("Transmit blocking...");
+//		if (!uirt.transmit(
+//			"0000 006F 0000 0032 0081 0042 0010 0011 0010 0031 0010 0011 0010 0011 0010 0011 0010 0011 0010 0011 0010 0011 0010 "
+//				+ "0011 0010 0011 0010 0011 0010 0011 0010 0011 0010 0031 0010 0011 0010 0011 0010 0011 0010 0011 0010 0011 0010 "
+//				+ "0011 0010 0011 0010 0011 0010 0011 0010 0031 0010 0011 0010 0011 0010 0011 0010 0011 0010 0011 0010 0011 0010 "
+//				+ "0011 0010 0011 0010 0011 0010 0011 0010 0011 0010 0011 0010 0031 0010 0011 0010 0011 0010 0011 0010 0011 0010 "
+//				+ "0011 0010 0011 0010 0011 0010 0031 0010 0011 0010 0011 0010 0031 0010 0ADC",
+//			true)) throw new Exception("Transmit failed!");
+//		System.out.println("Done.\n");
+
+		System.out.println("Learning...");
+		String code = uirt.learn();
+		System.out.println("Learned: " + code);
+//		uirt.transmit(code, Format.pronto, 5 ,0 ,true);
+			
+//		System.out.println("\nTransmit blocking...");
+
+//		if (!uirt.transmit(code, Format.pronto, 5 ,0 ,true)) throw new Exception("Transmit failed!");
+//		System.out.println("Signal sent: " +code);
+
+//		System.out.println("Aborting.");
+		uirt.abortLearn();
+
+//		System.out.println("\nDisconnecting...");
+		uirt.disconnect();
+//		System.out.println("Connected: " + uirt.isConnected());
+		
+		return code;
+	}
+}
