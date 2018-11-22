@@ -13,7 +13,7 @@ import image.image;
 public class AverMedia_control {
 	public static void capture_image_single() {
 		String dir_running = directory_parameter.running_dir();
-		String dir_actual = directory_parameter.actual_result_dir();
+		String dir_actual = File_Fol_control.main_test_ID;
 		
 		int fol_count = File_Fol_control.folder_count(dir_actual);
 		int file_count = File_Fol_control.file_count(dir_actual+"\\test_"+fol_count+"\\image");
@@ -40,7 +40,7 @@ public class AverMedia_control {
 	
 	public static String capture_image_single_dir() {
 		String dir_running = directory_parameter.running_dir();
-		String dir_actual = directory_parameter.actual_result_dir();
+		String dir_actual = File_Fol_control.main_test_ID;
 		String image_dir = "";
 		
 		int fol_count = File_Fol_control.folder_count(dir_actual);
@@ -70,7 +70,7 @@ public class AverMedia_control {
 	
 	public static String capture_image_track_dir() throws IOException {
 		String dir_running = directory_parameter.running_dir();
-		String dir_actual = directory_parameter.actual_result_dir();
+		String dir_actual = File_Fol_control.main_test_ID;
 		String image_dir = "";
 		
 		int fol_count = File_Fol_control.folder_count(dir_actual);
@@ -101,7 +101,7 @@ public class AverMedia_control {
 	}
 	public static String capture_image_album_dir() throws IOException {
 		String dir_running = directory_parameter.running_dir();
-		String dir_actual = directory_parameter.actual_result_dir();
+		String dir_actual = File_Fol_control.main_test_ID;
 		String image_dir = "";
 		
 		int fol_count = File_Fol_control.folder_count(dir_actual);
@@ -132,7 +132,7 @@ public class AverMedia_control {
 	}
 	public static String capture_image_artist_dir() throws IOException {
 		String dir_running = directory_parameter.running_dir();
-		String dir_actual = directory_parameter.actual_result_dir();
+		String dir_actual = File_Fol_control.main_test_ID;
 		String image_dir = "";
 		
 		int fol_count = File_Fol_control.folder_count(dir_actual);
@@ -164,7 +164,7 @@ public class AverMedia_control {
 	
 	public static String capture_image_bitrate_dir() throws IOException {
 		String dir_running = directory_parameter.running_dir();
-		String dir_actual = directory_parameter.actual_result_dir();
+		String dir_actual = File_Fol_control.main_test_ID;
 		String image_dir = "";
 		
 		int fol_count = File_Fol_control.folder_count(dir_actual);
@@ -196,7 +196,7 @@ public class AverMedia_control {
 	
 	public static String capture_image_codec_dir() throws IOException {
 		String dir_running = directory_parameter.running_dir();
-		String dir_actual = directory_parameter.actual_result_dir();
+		String dir_actual = File_Fol_control.main_test_ID;
 		String image_dir = "";
 		
 		int fol_count = File_Fol_control.folder_count(dir_actual);
@@ -270,7 +270,7 @@ public class AverMedia_control {
 	
 	public static void record_video_end() throws InterruptedException {
 		String dir_running = directory_parameter.running_dir();
-		String dir_actual = directory_parameter.actual_result_dir();
+		String dir_actual = File_Fol_control.main_test_ID;
 		String video_dir = "";
 		String audio_dir = "";
 		int fol_count = File_Fol_control.folder_count(dir_actual);
@@ -303,7 +303,7 @@ public class AverMedia_control {
 	
 	public static String record_video_end_dir() {
 		String dir_running = directory_parameter.running_dir();
-		String dir_actual = directory_parameter.actual_result_dir();
+		String dir_actual = File_Fol_control.main_test_ID;
 		String video_dir = "";
 		String audio_dir = "";
 		

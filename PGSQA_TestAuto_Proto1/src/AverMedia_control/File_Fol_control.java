@@ -23,7 +23,7 @@ import java.util.stream.Stream;
 import control.directory_parameter;
 
 public class File_Fol_control {
-	public static String main_test_ID;
+	public static String main_test_ID = directory_parameter.actual_result_dir();
 	
 	public static int file_count(String dir) {
 		String dir_path = dir;	
@@ -86,36 +86,30 @@ public class File_Fol_control {
 		return test_ID_dir;
 	}
 	
-	public static String create_test_subFol(String test_mainFol) {
-		
+	public static String create_test_subFol() {
 		String test_ID_dir = "";
 		String dir = directory_parameter.actual_result_dir();
-		int fol_count = folder_count(test_mainFol);
+		int fol_count = folder_count(main_test_ID);
 		
-		new File(test_mainFol+"//test_"+(fol_count+1)).mkdirs();
-		new File(test_mainFol+"//test_"+(fol_count+1)+"//image").mkdirs();
-		new File(test_mainFol+"//test_"+(fol_count+1)+"//audio").mkdirs();
-		new File(test_mainFol+"//test_"+(fol_count+1)+"//video").mkdirs();
+		new File(main_test_ID+"//test_"+(fol_count+1)).mkdirs();
+		new File(main_test_ID+"//test_"+(fol_count+1)+"//image").mkdirs();
+		new File(main_test_ID+"//test_"+(fol_count+1)+"//audio").mkdirs();
+		new File(main_test_ID+"//test_"+(fol_count+1)+"//video").mkdirs();
 
 		try {
-			File logFile = new File(test_mainFol+"//test_"+(fol_count+1)+"//log.txt");
+			File logFile = new File(main_test_ID+"//test_"+(fol_count+1)+"//log.txt");
 			logFile.createNewFile(); // if file already exists will do nothing 
 			FileOutputStream oFile = new FileOutputStream(logFile, false);
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} 
-		test_ID_dir = test_mainFol+"\\test_"+(fol_count+1);
+		test_ID_dir = main_test_ID+"\\test_"+(fol_count+1);
 		return test_ID_dir;
 	}
 	
-	
-	
-	
-	
-	
 	public static String get_testID() {
-		String dir = directory_parameter.actual_result_dir();
+		String dir = main_test_ID;
 		String test_ID_dir = "";
 		int fol_count = folder_count(dir);
 		

@@ -4,7 +4,7 @@ import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
 import rmt_control.*;
 import test_case.HAS_test_001;
-import test_case.HAS_test_demo;
+import test_case.HAS_test_demo_01;
 
 import java.awt.Color;
 import java.awt.Image;
@@ -35,11 +35,11 @@ public class main {
 		
 //		image.crop_image("C:\\SQA_Projects\\SQA_Test_Automation\\expected_result\\HAS\\common\\1.png", "C:\\SQA_Projects\\SQA_Test_Automation\\expected_result\\HAS\\common\\2.png", 414, 110, 365, 40);
 		
-		
+		File_Fol_control.create_test_mainFol("demo");
 //		actual test sample
-		for(int x=0; x<1; x++) {
+		for(int x=0; x<8; x++) {
 			try {
-				result = HAS_test_demo.cd_playback_control_play_01_demo();
+				result = HAS_test_demo_01.cd_playback_control_play_01_demo();
 //				result = HAS_test_demo.USB_temp_display_demo1();
 //				result = HAS_test_demo.USB_temp_display_demo2();
 				String test_ID = File_Fol_control.get_testID();
@@ -60,7 +60,31 @@ public class main {
 				e.printStackTrace();
 			}
 		}
-		
+		File_Fol_control.create_test_mainFol("demo2");
+//		actual test sample
+		for(int x=0; x<15; x++) {
+			try {
+				result = HAS_test_demo_01.cd_playback_control_play_01_demo();
+//				result = HAS_test_demo.USB_temp_display_demo1();
+//				result = HAS_test_demo.USB_temp_display_demo2();
+				String test_ID = File_Fol_control.get_testID();
+				System.out.println((x+1)+". ID: "+test_ID+", Result cd_playback_control_play_01 :"+result);
+				System.out.println((x+1)+". ID: "+test_ID+", Result USB_temp_display :"+result);
+				Thread.sleep(5000);		
+				
+				if(result == true) {
+					OK_count++;
+				}else {
+					NG_count++;
+				}
+			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (Exception e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
 //		test end
 //		email.send_email();
 		
